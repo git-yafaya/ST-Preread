@@ -33,14 +33,14 @@ void main() {
       expect(anchor.copyWith(), anchor);
     });
 
-    test('copyWith 可以把面清空，表示非文字块的锚点', () {
+    test('copyWith 可以把面清空，表示块的开头（文字块同样合法）', () {
       final blockStart = anchor.copyWith(side: () => null, textOffset: 0);
       expect(blockStart.blockIndex, 6);
       expect(blockStart.side, isNull);
       expect(blockStart.textOffset, 0);
     });
 
-    test('偏移为负，或非文字块带了非零偏移时断言失败', () {
+    test('偏移为负，或 side 为 null 却带了非零偏移时断言失败', () {
       const negativeOffset = -1;
       const nonZeroOffset = 5;
       expect(

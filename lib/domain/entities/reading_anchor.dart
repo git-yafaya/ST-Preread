@@ -11,15 +11,19 @@ class ReadingAnchor {
     required this.side,
     required this.textOffset,
   }) : assert(textOffset >= 0, 'textOffset 不能为负'),
-       assert(side != null || textOffset == 0, '非文字块的 textOffset 必须为 0');
+       assert(
+         side != null || textOffset == 0,
+         'side 为 null 表示块的开头，此时 textOffset 必须为 0',
+       );
 
   /// 所在块在章内的下标。
   final int blockIndex;
 
-  /// 锚点所在的那一面；非文字块为 null。
+  /// 锚点所在的那一面。为 null 表示块的开头，文字块同样合法
+  /// （目录跳转、新书首次打开时就是这样）；此时 [textOffset] 必须为 0。
   final TextSide? side;
 
-  /// 相对该面文字的字符偏移（UTF-16 码元）；[side] 为 null 时恒为 0。
+  /// 相对该面文字的字符偏移（UTF-16 码元）；[side] 为 null 时必须为 0。
   final int textOffset;
 
   ReadingAnchor copyWith({
