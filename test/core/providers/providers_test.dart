@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show ProviderException;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:st_preread/core/constants/reader_setting_defaults.dart';
 import 'package:st_preread/core/providers/providers.dart';
 import 'package:st_preread/data/mock/mock_audio_playback_service.dart';
 import 'package:st_preread/data/mock/mock_reader_settings_repository.dart';
@@ -58,11 +59,12 @@ void main() {
 
       expect(
         await container.read(readerSettingsProvider.future),
-        MockReaderSettingsRepository.defaultSettings,
+        defaultReaderSettings,
       );
 
-      final darkSettings = MockReaderSettingsRepository.defaultSettings
-          .copyWith(themeMode: ReaderThemeMode.dark);
+      final darkSettings = defaultReaderSettings.copyWith(
+        themeMode: ReaderThemeMode.dark,
+      );
       await repository.saveSettings(darkSettings);
       await pumpEventQueue();
 

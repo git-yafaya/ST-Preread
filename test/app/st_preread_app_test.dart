@@ -5,8 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:st_preread/app/mock_provider_bindings.dart';
 import 'package:st_preread/app/st_preread_app.dart';
 import 'package:st_preread/core/constants/app_routes.dart';
-import 'package:st_preread/core/constants/app_strings.dart';
-import 'package:st_preread/core/constants/placeholder_strings.dart';
+import 'package:st_preread/core/constants/reader_setting_defaults.dart';
 import 'package:st_preread/core/providers/providers.dart';
 import 'package:st_preread/data/mock/mock_reader_settings_repository.dart';
 import 'package:st_preread/domain/domain.dart';
@@ -39,17 +38,18 @@ void main() {
     return tester.widget<MaterialApp>(find.byType(MaterialApp));
   }
 
+  /// 从 Navigator 取路由器，而不是从某个具体页面的内部组件取：
+  /// 这样页面的界面怎么改都不影响这里。
   void goTo(WidgetTester tester, String location) {
-    GoRouter.of(tester.element(find.byType(Scaffold))).go(location);
+    GoRouter.of(tester.element(find.byType(Navigator).first)).go(location);
   }
 
   group('启动', () {
-    testWidgets('应用能启动并显示书架占位页', (tester) async {
+    testWidgets('应用能启动并显示书架页', (tester) async {
       await pumpApp(tester);
 
       expect(find.byType(BookshelfPage), findsOneWidget);
-      expect(find.text(PlaceholderStrings.bookshelfPage), findsOneWidget);
-      expect(find.text(AppStrings.appTitle), findsOneWidget);
+      expect(find.byType(ReaderPage), findsNothing);
     });
 
     testWidgets('使用 Material 3 的浅色与深色主题', (tester) async {
@@ -63,13 +63,13 @@ void main() {
   });
 
   group('路由', () {
-    testWidgets('进入 /books/:bookId 显示对应书籍的阅读占位页', (tester) async {
+    testWidgets('进入 /books/:bookId 显示对应书籍的阅读页', (tester) async {
       await pumpApp(tester);
 
       goTo(tester, AppRoutes.readerLocation('sample-book-1'));
       await tester.pumpAndSettle();
 
-      expect(find.text(PlaceholderStrings.readerPage), findsOneWidget);
+      expect(find.byType(BookshelfPage), findsNothing);
       expect(
         tester.widget<ReaderPage>(find.byType(ReaderPage)).bookId,
         'sample-book-1',
@@ -108,7 +108,7 @@ void main() {
 
     testWidgets('设置为深色时应用使用深色主题', (tester) async {
       final settingsRepository = MockReaderSettingsRepository(
-        initialSettings: MockReaderSettingsRepository.defaultSettings.copyWith(
+        initialSettings: defaultReaderSettings.copyWith(
           themeMode: ReaderThemeMode.dark,
         ),
       );
@@ -125,9 +125,7 @@ void main() {
       await pumpApp(tester, settingsRepository: settingsRepository);
 
       await settingsRepository.saveSettings(
-        MockReaderSettingsRepository.defaultSettings.copyWith(
-          themeMode: ReaderThemeMode.light,
-        ),
+        defaultReaderSettings.copyWith(themeMode: ReaderThemeMode.light),
       );
       await tester.pumpAndSettle();
 
