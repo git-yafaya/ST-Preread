@@ -14,7 +14,7 @@ void main() {
   final ticksPerSentence =
       (sentenceDuration.inMicroseconds / tickInterval.inMicroseconds).ceil();
 
-  // 译文一面的播放队列依次是下面三句；中间隔着一句无语音的句子和一个插图块。
+  // 译文一面的播放队列依次是下面三句；中间隔着一句无语音的句子、一个插图块和一条分隔线。
   final chapter = buildChapterFixture([
     buildParagraphFixture(
       id: 'first',
@@ -22,6 +22,7 @@ void main() {
       translationAudio: [true, false, true],
     ),
     const IllustrationBlock(id: 'image', imagePath: 'a.png', caption: null),
+    const DividerBlock(id: 'divider'),
     buildParagraphFixture(id: 'last', translationAudio: [true]),
   ]);
   const firstSentence = SentenceRef(
@@ -35,7 +36,7 @@ void main() {
     sentenceIndex: 2,
   );
   const lastSentence = SentenceRef(
-    blockIndex: 2,
+    blockIndex: 3,
     side: TextSide.translation,
     sentenceIndex: 0,
   );
@@ -163,7 +164,7 @@ void main() {
       expect(await currentState(), stateAt(secondSentence));
     });
 
-    test('推进时跨过插图块进入后面的段落', () async {
+    test('推进时跨过插图块与分隔线进入后面的段落', () async {
       await service.playFrom(secondSentence);
 
       ticker.tick(times: ticksPerSentence);

@@ -13,9 +13,11 @@ String _sentenceSeparatorOf(TextSide side) {
   };
 }
 
-/// 把一面的内容描述拼成正文，并推算每一句的字符区间与语音。
+/// 把一面的内容描述拼成正文，并推算行内样式区间、每一句的字符区间与语音。
 ///
 /// [audioFileStem] 是这一面语音文件的路径前缀（不含扩展名）。
+/// 样式短语找不到、出现多次或互相重叠时抛 [StateError]：
+/// 那是示例内容写错了，应当立刻暴露而不是生成错位的区间。
 SidedText buildSidedText({
   required SampleSideSpec spec,
   required TextSide side,
@@ -23,13 +25,53 @@ SidedText buildSidedText({
 }) {
   final separator = _sentenceSeparatorOf(side);
   final text = spec.sentences.map((sentence) => sentence.text).join(separator);
-  if (!spec.hasSentenceData) {
-    return SidedText(text: text, sentences: const []);
-  }
   return SidedText(
     text: text,
-    sentences: _buildSentences(spec.sentences, side, audioFileStem),
+    styleSpans: _buildStyleSpans(text, spec.styledPhrases),
+    sentences: spec.hasSentenceData
+        ? _buildSentences(spec.sentences, side, audioFileStem)
+        : const [],
   );
+}
+
+List<InlineStyleSpan> _buildStyleSpans(
+  String text,
+  List<SampleStyledPhrase> styledPhrases,
+) {
+  final styleSpans = [
+    for (final styledPhrase in styledPhrases)
+      _locateStyledPhrase(text, styledPhrase),
+  ]..sort((first, second) => first.startOffset.compareTo(second.startOffset));
+  _ensureNoOverlap(styleSpans);
+  return styleSpans;
+}
+
+InlineStyleSpan _locateStyledPhrase(
+  String text,
+  SampleStyledPhrase styledPhrase,
+) {
+  final startOffset = text.indexOf(styledPhrase.phrase);
+  final occursExactlyOnce =
+      startOffset >= 0 && startOffset == text.lastIndexOf(styledPhrase.phrase);
+  if (!occursExactlyOnce) {
+    throw StateError('样式短语必须在所属文字中恰好出现一次：${styledPhrase.phrase}');
+  }
+  return InlineStyleSpan(
+    startOffset: startOffset,
+    endOffset: startOffset + styledPhrase.phrase.length,
+    styles: styledPhrase.styles,
+  );
+}
+
+/// [sortedStyleSpans] 须已按起点排序。
+void _ensureNoOverlap(List<InlineStyleSpan> sortedStyleSpans) {
+  for (var index = 1; index < sortedStyleSpans.length; index++) {
+    final previousSpan = sortedStyleSpans[index - 1];
+    final currentSpan = sortedStyleSpans[index];
+    if (currentSpan.startOffset < previousSpan.endOffset) {
+      throw StateError('样式区间互相重叠：$previousSpan 与 $currentSpan');
+    }
+  }
 }
 
 List<Sentence> _buildSentences(

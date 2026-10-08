@@ -10,6 +10,7 @@ SidedText buildSidedTextFixture(
 }) {
   return SidedText(
     text: '字' * (sentenceLength * sentenceHasAudio.length),
+    styleSpans: const [],
     sentences: [
       for (final (index, hasAudio) in sentenceHasAudio.indexed)
         Sentence(
@@ -30,12 +31,14 @@ SidedText buildSidedTextFixture(
 /// 构建一个段落：某一面传 null 表示该段落没有这一面。
 ParagraphBlock buildParagraphFixture({
   String id = 'paragraph',
+  ParagraphStyle style = ParagraphStyle.body,
   List<bool>? sourceAudio,
   List<bool>? translationAudio,
   int sentenceLength = fixtureSentenceLength,
 }) {
   return ParagraphBlock(
     id: id,
+    style: style,
     source: sourceAudio == null
         ? null
         : buildSidedTextFixture(sourceAudio, sentenceLength: sentenceLength),

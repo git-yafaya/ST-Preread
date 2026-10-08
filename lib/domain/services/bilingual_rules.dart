@@ -1,6 +1,7 @@
 import '../entities/chapter.dart';
 import '../entities/content_block.dart';
 import '../entities/reader_settings.dart';
+import '../entities/sentence.dart';
 import '../entities/sentence_ref.dart';
 import '../entities/text_side.dart';
 
@@ -76,10 +77,7 @@ Iterable<SentenceRef> _playableSentencesInBlock(
   int blockIndex,
   TextSide side,
 ) sync* {
-  if (block is! ParagraphBlock) {
-    return;
-  }
-  final sentences = block.textOf(side)?.sentences ?? const [];
+  final sentences = _sentencesOf(block, side);
   for (var index = 0; index < sentences.length; index++) {
     if (sentences[index].hasAudio) {
       yield SentenceRef(
@@ -89,4 +87,13 @@ Iterable<SentenceRef> _playableSentencesInBlock(
       );
     }
   }
+}
+
+/// 用穷尽的 switch 而不是类型判断：以后新增块类型时，
+/// 编译器会强制在这里决定它是否参与朗读。
+List<Sentence> _sentencesOf(ContentBlock block, TextSide side) {
+  return switch (block) {
+    ParagraphBlock() => block.textOf(side)?.sentences ?? const [],
+    IllustrationBlock() || DividerBlock() => const [],
+  };
 }

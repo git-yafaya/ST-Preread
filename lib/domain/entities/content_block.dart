@@ -9,14 +9,19 @@ sealed class ContentBlock {
   final String id;
 }
 
+/// 段落的块级样式。Markdown 四级及更深的标题归入 [heading3]。
+enum ParagraphStyle { body, heading1, heading2, heading3, quote }
+
 /// 一个段落。[source] 与 [translation] 至少有一面非空。
 final class ParagraphBlock extends ContentBlock {
   const ParagraphBlock({
     required super.id,
+    required this.style,
     required this.source,
     required this.translation,
   }) : assert(source != null || translation != null, '段落至少要有一面文字');
 
+  final ParagraphStyle style;
   final SidedText? source;
   final SidedText? translation;
 
@@ -30,11 +35,13 @@ final class ParagraphBlock extends ContentBlock {
 
   ParagraphBlock copyWith({
     String? id,
+    ParagraphStyle? style,
     NullableValueGetter<SidedText>? source,
     NullableValueGetter<SidedText>? translation,
   }) {
     return ParagraphBlock(
       id: id ?? this.id,
+      style: style ?? this.style,
       source: source == null ? this.source : source(),
       translation: translation == null ? this.translation : translation(),
     );
@@ -44,17 +51,36 @@ final class ParagraphBlock extends ContentBlock {
   bool operator ==(Object other) {
     return other is ParagraphBlock &&
         other.id == id &&
+        other.style == style &&
         other.source == source &&
         other.translation == translation;
   }
 
   @override
-  int get hashCode => Object.hash(id, source, translation);
+  int get hashCode => Object.hash(id, style, source, translation);
 
   @override
   String toString() =>
-      'ParagraphBlock(id: $id, hasSource: ${source != null}, '
+      'ParagraphBlock(id: $id, style: ${style.name}, '
+      'hasSource: ${source != null}, '
       'hasTranslation: ${translation != null})';
+}
+
+/// 分隔线（Markdown 的 `---`）。
+final class DividerBlock extends ContentBlock {
+  const DividerBlock({required super.id});
+
+  DividerBlock copyWith({String? id}) => DividerBlock(id: id ?? this.id);
+
+  @override
+  bool operator ==(Object other) => other is DividerBlock && other.id == id;
+
+  // 混入类型，避免与只有 id 相同的其他对象撞哈希。
+  @override
+  int get hashCode => Object.hash(DividerBlock, id);
+
+  @override
+  String toString() => 'DividerBlock(id: $id)';
 }
 
 /// 内嵌在正文中的一张插图。

@@ -69,6 +69,7 @@ ContentBlock _buildBlock(String blockKey, SampleBlockSpec blockSpec) {
   return switch (blockSpec) {
     SampleParagraphSpec() => ParagraphBlock(
       id: blockKey,
+      style: blockSpec.style,
       source: _buildSide(blockKey, TextSide.source, blockSpec.source),
       translation: _buildSide(
         blockKey,
@@ -81,6 +82,7 @@ ContentBlock _buildBlock(String blockKey, SampleBlockSpec blockSpec) {
       imagePath: '$_sampleAssetRoot/illustrations/${blockSpec.imageFileName}',
       caption: blockSpec.caption,
     ),
+    SampleDividerSpec() => DividerBlock(id: blockKey),
   };
 }
 

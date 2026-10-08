@@ -1,6 +1,6 @@
 import 'chapter_summary.dart';
 import 'content_block.dart';
-import 'list_equality.dart';
+import 'collection_equality.dart';
 
 /// 一章的完整内容。
 class Chapter {

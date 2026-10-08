@@ -6,6 +6,7 @@ export 'entities/book.dart';
 export 'entities/chapter.dart';
 export 'entities/chapter_summary.dart';
 export 'entities/content_block.dart';
+export 'entities/inline_style_span.dart';
 export 'entities/nullable_value_getter.dart';
 export 'entities/reader_settings.dart';
 export 'entities/reading_position.dart';

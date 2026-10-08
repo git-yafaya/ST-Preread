@@ -10,6 +10,8 @@ void main() {
     caption: null,
   );
 
+  const divider = DividerBlock(id: 'divider');
+
   group('resolveDisplayedSides', () {
     final bilingual = buildParagraphFixture(
       sourceAudio: [true],
@@ -57,6 +59,22 @@ void main() {
       );
     });
 
+    test('块级样式不影响显示哪几面', () {
+      for (final style in ParagraphStyle.values) {
+        final styledSourceOnly = buildParagraphFixture(
+          style: style,
+          sourceAudio: [true],
+        );
+        expect(
+          resolveDisplayedSides(
+            styledSourceOnly,
+            BilingualDisplayMode.translationOnly,
+          ),
+          [TextSide.source],
+        );
+      }
+    });
+
     test('任何显示方式下结果都不为空', () {
       for (final paragraph in [bilingual, sourceOnly, translationOnly]) {
         for (final displayMode in BilingualDisplayMode.values) {
@@ -67,11 +85,12 @@ void main() {
   });
 
   group('listPlayableSentences', () {
-    test('按阅读顺序列出带语音的句子，跳过无语音的句子与插图块', () {
+    test('按阅读顺序列出带语音的句子，跳过无语音的句子、插图块与分隔线', () {
       final chapter = buildChapterFixture([
         buildParagraphFixture(translationAudio: [true, false, true]),
         illustration,
         buildParagraphFixture(translationAudio: [false, true]),
+        divider,
       ]);
 
       expect(listPlayableSentences(chapter, TextSide.translation), const [
@@ -93,6 +112,24 @@ void main() {
       ]);
     });
 
+    test('标题与引用段里带语音的句子同样进入播放队列', () {
+      final chapter = buildChapterFixture([
+        buildParagraphFixture(
+          style: ParagraphStyle.heading1,
+          translationAudio: [true],
+        ),
+        buildParagraphFixture(
+          style: ParagraphStyle.quote,
+          translationAudio: [true],
+        ),
+      ]);
+
+      expect(
+        listPlayableSentences(chapter, TextSide.translation),
+        hasLength(2),
+      );
+    });
+
     test('只统计指定的那一面', () {
       final chapter = buildChapterFixture([
         buildParagraphFixture(sourceAudio: [true], translationAudio: [false]),
@@ -107,6 +144,7 @@ void main() {
       final withoutSentenceData = buildChapterFixture([
         buildParagraphFixture(sourceAudio: []),
         illustration,
+        divider,
       ]);
 
       expect(
@@ -133,6 +171,7 @@ void main() {
     final unvoiced = buildChapterFixture([
       buildParagraphFixture(sourceAudio: [false], translationAudio: [false]),
       illustration,
+      divider,
     ]);
 
     test('单面显示时朗读所显示的那一面', () {

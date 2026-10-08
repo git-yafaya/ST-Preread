@@ -5,6 +5,44 @@ import 'package:st_preread/domain/domain.dart';
 /// 按默认字号，一屏手机正文大约容纳这么多汉字；超过它才算「超过一屏」。
 const int _charactersPerScreen = 600;
 
+/// 字符区间的统一表示，让样式区间与句子可以共用同一套校验。
+typedef _OffsetRange = ({int startOffset, int endOffset});
+
+/// 断言一组区间按顺序排列、互不重叠，且都落在长度为 [textLength] 的文字之内。
+void _expectOrderedWithinBounds(List<_OffsetRange> ranges, int textLength) {
+  var previousEndOffset = 0;
+  for (final range in ranges) {
+    expect(range.startOffset, greaterThanOrEqualTo(previousEndOffset));
+    expect(range.endOffset, greaterThan(range.startOffset));
+    expect(range.endOffset, lessThanOrEqualTo(textLength));
+    previousEndOffset = range.endOffset;
+  }
+}
+
+List<_OffsetRange> _sentenceRangesOf(SidedText sidedText) {
+  return [
+    for (final sentence in sidedText.sentences)
+      (startOffset: sentence.startOffset, endOffset: sentence.endOffset),
+  ];
+}
+
+List<_OffsetRange> _styleRangesOf(SidedText sidedText) {
+  return [
+    for (final span in sidedText.styleSpans)
+      (startOffset: span.startOffset, endOffset: span.endOffset),
+  ];
+}
+
+/// 一段样式是否同时盖住了两句话各自的一部分。
+bool _crossesSentenceBoundary(InlineStyleSpan span, SidedText sidedText) {
+  final touchedSentences = sidedText.sentences.where(
+    (sentence) =>
+        sentence.startOffset < span.endOffset &&
+        span.startOffset < sentence.endOffset,
+  );
+  return touchedSentences.length > 1;
+}
+
 void main() {
   final importedAt = DateTime.utc(2026, 10, 8);
   final sampleBook = buildSampleBook(sequenceNumber: 1, importedAt: importedAt);
@@ -20,6 +58,14 @@ void main() {
   final allSentences = [
     for (final sidedText in allSidedTexts) ...sidedText.sentences,
   ];
+  final allStyleSpans = [
+    for (final sidedText in allSidedTexts) ...sidedText.styleSpans,
+  ];
+  final allStyledTexts = {
+    for (final sidedText in allSidedTexts)
+      for (final span in sidedText.styleSpans)
+        sidedText.text.substring(span.startOffset, span.endOffset),
+  };
 
   group('示例书的基本信息', () {
     test('书架条目与章节内容一致', () {
@@ -155,15 +201,136 @@ void main() {
     });
   });
 
-  group('示例书的句级数据', () {
+  group('示例书的 Markdown 覆盖面', () {
+    test('四种行内样式都出现过', () {
+      final usedStyles = {for (final span in allStyleSpans) ...span.styles};
+
+      expect(usedStyles, InlineStyle.values.toSet());
+    });
+
+    test('有一处粗斜体叠加在同一个区间里', () {
+      expect(
+        allStyleSpans.where(
+          (span) => span.styles.containsAll(const {
+            InlineStyle.bold,
+            InlineStyle.italic,
+          }),
+        ),
+        isNotEmpty,
+      );
+    });
+
+    test('有一处样式区间跨越句子边界', () {
+      final crossingSidedTexts = allSidedTexts.where(
+        (sidedText) => sidedText.styleSpans.any(
+          (span) => _crossesSentenceBoundary(span, sidedText),
+        ),
+      );
+
+      expect(crossingSidedTexts, isNotEmpty);
+    });
+
+    test('三级标题、引用段与正文段都出现过', () {
+      final usedStyles = {for (final paragraph in paragraphs) paragraph.style};
+
+      expect(usedStyles, ParagraphStyle.values.toSet());
+    });
+
+    test('有分隔线', () {
+      expect(allBlocks.whereType<DividerBlock>(), isNotEmpty);
+    });
+
+    test('各章的 Markdown 形态与约定的分布一致', () {
+      Set<ParagraphStyle> headingAndQuoteStylesOf(Chapter chapter) {
+        return {
+          for (final block in chapter.blocks.whereType<ParagraphBlock>())
+            if (block.style != ParagraphStyle.body) block.style,
+        };
+      }
+
+      Set<InlineStyle> inlineStylesOf(Chapter chapter) {
+        return {
+          for (final block in chapter.blocks.whereType<ParagraphBlock>())
+            for (final side in TextSide.values)
+              for (final span in block.textOf(side)?.styleSpans ?? const [])
+                ...span.styles,
+        };
+      }
+
+      final blockStylesByChapter = [
+        for (final chapter in sampleBook.chapters)
+          headingAndQuoteStylesOf(chapter),
+      ];
+      final inlineStylesByChapter = [
+        for (final chapter in sampleBook.chapters) inlineStylesOf(chapter),
+      ];
+      final dividerCountsByChapter = [
+        for (final chapter in sampleBook.chapters)
+          chapter.blocks.whereType<DividerBlock>().length,
+      ];
+
+      expect(blockStylesByChapter, [
+        {ParagraphStyle.heading1, ParagraphStyle.heading2},
+        {ParagraphStyle.heading3, ParagraphStyle.quote},
+        <ParagraphStyle>{},
+      ]);
+      expect(inlineStylesByChapter, [
+        {InlineStyle.bold, InlineStyle.italic},
+        {InlineStyle.strikethrough},
+        {InlineStyle.code},
+      ]);
+      expect(dividerCountsByChapter, [1, 0, 1]);
+    });
+
+    test('样式区间框住的正是预期的那些文字', () {
+      expect(allStyledTexts, {
+        'Nobody',
+        '没有人',
+        'Come before the autumn tide',
+        '赶在秋潮之前来',
+        'a keeper',
+        '守灯人',
+        'did not come back. Inside the tower, slowly,',
+        '没有再回来。塔里，有人慢慢地',
+        'the direction of the wind',
+        '风的方向',
+        '19:06',
+      });
+    });
+
+    test('正文是纯文字，不含 Markdown 标记', () {
+      final inlineMarker = RegExp(r'[*_~`]');
+      final blockMarker = RegExp(r'^\s*(#{1,6}\s|>\s|-{3,}\s*$)');
+
+      for (final sidedText in allSidedTexts) {
+        expect(sidedText.text, isNot(contains(inlineMarker)));
+        expect(blockMarker.hasMatch(sidedText.text), isFalse);
+      }
+    });
+  });
+
+  group('示例书的区间数据', () {
     test('每一面的句子按顺序排列、互不重叠且不越界', () {
       for (final sidedText in allSidedTexts) {
-        var previousEndOffset = 0;
-        for (final sentence in sidedText.sentences) {
-          expect(sentence.startOffset, greaterThanOrEqualTo(previousEndOffset));
-          expect(sentence.endOffset, lessThanOrEqualTo(sidedText.text.length));
-          previousEndOffset = sentence.endOffset;
-        }
+        _expectOrderedWithinBounds(
+          _sentenceRangesOf(sidedText),
+          sidedText.text.length,
+        );
+      }
+    });
+
+    test('每一面的样式区间按起点排序、互不重叠且不越界', () {
+      for (final sidedText in allSidedTexts) {
+        _expectOrderedWithinBounds(
+          _styleRangesOf(sidedText),
+          sidedText.text.length,
+        );
+      }
+    });
+
+    test('样式区间首尾不落在空白上', () {
+      for (final styledText in allStyledTexts) {
+        expect(styledText, styledText.trim());
       }
     });
 
