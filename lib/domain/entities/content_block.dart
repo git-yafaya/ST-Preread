@@ -2,7 +2,7 @@ import 'nullable_value_getter.dart';
 import 'sided_text.dart';
 import 'text_side.dart';
 
-/// 正文由「块」顺序组成，块是阅读定位与插图锚定的最小单位。
+/// 正文由「块」顺序组成，块是插图锚定与两面文字对应的最小单位。
 sealed class ContentBlock {
   const ContentBlock({required this.id});
 
@@ -13,6 +13,8 @@ sealed class ContentBlock {
 enum ParagraphStyle { body, heading1, heading2, heading3, quote }
 
 /// 一个段落。[source] 与 [translation] 至少有一面非空。
+///
+/// 两面只在「段」这一级对应，句子之间没有一一对应关系。
 final class ParagraphBlock extends ContentBlock {
   const ParagraphBlock({
     required super.id,

@@ -1,36 +1,34 @@
-import '../../../core/constants/mock_playback_timing.dart';
 import '../../../domain/domain.dart';
+import '../mock_playback_timing.dart';
 import 'sample_content_spec.dart';
 
 /// 示例语音文件的扩展名。文件并不存在，假播放器不会去读它。
 const String _audioFileExtension = '.mp3';
-
-/// 句子之间的分隔符：原文是英文，句间有空格；译文是中文，句间不留空。
-String _sentenceSeparatorOf(TextSide side) {
-  return switch (side) {
-    TextSide.source => ' ',
-    TextSide.translation => '',
-  };
-}
 
 /// 把一面的内容描述拼成正文，并推算行内样式区间、每一句的字符区间与语音。
 ///
 /// [audioFileStem] 是这一面语音文件的路径前缀（不含扩展名）。
 /// 样式短语找不到、出现多次或互相重叠时抛 [StateError]：
 /// 那是示例内容写错了，应当立刻暴露而不是生成错位的区间。
+///
+/// 返回的实体里所有集合都不可修改：仓库会缓存并反复交出同一个实体，
+/// 调用方若能改动其中的列表，就会污染之后每一次读取。
 SidedText buildSidedText({
   required SampleSideSpec spec,
   required TextSide side,
   required String audioFileStem,
 }) {
-  final separator = _sentenceSeparatorOf(side);
-  final text = spec.sentences.map((sentence) => sentence.text).join(separator);
+  final text = spec.sentences
+      .map((sentence) => '${sentence.text}${sentence.gapAfter}')
+      .join();
   return SidedText(
     text: text,
-    styleSpans: _buildStyleSpans(text, spec.styledPhrases),
-    sentences: spec.hasSentenceData
-        ? _buildSentences(spec.sentences, side, audioFileStem)
-        : const [],
+    styleSpans: List.unmodifiable(_buildStyleSpans(text, spec.styledPhrases)),
+    sentences: List.unmodifiable(
+      spec.hasSentenceData
+          ? _buildSentences(spec.sentences, side, audioFileStem)
+          : const <Sentence>[],
+    ),
   );
 }
 
@@ -59,7 +57,7 @@ InlineStyleSpan _locateStyledPhrase(
   return InlineStyleSpan(
     startOffset: startOffset,
     endOffset: startOffset + styledPhrase.phrase.length,
-    styles: styledPhrase.styles,
+    styles: Set.unmodifiable(styledPhrase.styles),
   );
 }
 
@@ -79,7 +77,6 @@ List<Sentence> _buildSentences(
   TextSide side,
   String audioFileStem,
 ) {
-  final separatorLength = _sentenceSeparatorOf(side).length;
   final sentences = <Sentence>[];
   var startOffset = 0;
   for (final (sentenceIndex, sampleSentence) in sampleSentences.indexed) {
@@ -94,12 +91,14 @@ List<Sentence> _buildSentences(
           ? _attachAudio(unvoicedSentence, side, audioFileStem, sentenceIndex)
           : unvoicedSentence,
     );
-    startOffset = endOffset + separatorLength;
+    startOffset = endOffset + sampleSentence.gapAfter.length;
   }
   return sentences;
 }
 
 /// 两面故意用不同的语音组织方式，让两种导出形态在界面开发阶段都被用到。
+/// 两种形态下片段时长都等于「句子字符数 × 每字符时长」，
+/// 假播放器据此推进，句子越长播得越久。
 Sentence _attachAudio(
   Sentence sentence,
   TextSide side,
@@ -113,11 +112,11 @@ Sentence _attachAudio(
       start: MockPlaybackTiming.durationPerCharacter * sentence.startOffset,
       end: MockPlaybackTiming.durationPerCharacter * sentence.endOffset,
     ),
-    // 译文：一句一个文件。
+    // 译文：一句一个文件，从文件开头播起。
     TextSide.translation => AudioClip(
       filePath: '$audioFileStem-$sentenceIndex$_audioFileExtension',
       start: null,
-      end: null,
+      end: MockPlaybackTiming.durationPerCharacter * sentence.length,
     ),
   };
   return sentence.copyWith(audio: () => audio);

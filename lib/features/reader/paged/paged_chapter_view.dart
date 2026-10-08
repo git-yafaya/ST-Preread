@@ -8,9 +8,9 @@ class PagedChapterView extends StatelessWidget {
   const PagedChapterView({
     required this.chapter,
     required this.displayMode,
-    required this.initialBlockIndex,
+    required this.initialAnchor,
     required this.activeSentence,
-    required this.onBlockVisible,
+    required this.onAnchorChanged,
     required this.onSentenceTap,
     super.key,
   });
@@ -18,16 +18,16 @@ class PagedChapterView extends StatelessWidget {
   final Chapter chapter;
   final BilingualDisplayMode displayMode;
 
-  /// 进入时定位到的块（进度恢复 / 目录跳转）。
-  final int initialBlockIndex;
+  /// 进入时定位到的锚点（进度恢复；目录跳转时为该章开头）。
+  final ReadingAnchor initialAnchor;
 
-  /// 正在朗读的句子；视图负责高亮它，并在它变化时把它带入可视区。
+  /// 正在播放或暂停中的句子，用于高亮；没有则为 null。
   final SentenceRef? activeSentence;
 
-  /// 当前阅读到的块变化时回调，阅读页据此保存进度。
-  final ValueChanged<int> onBlockVisible;
+  /// 当前阅读锚点变化时回调，阅读页据此保存进度。
+  final ValueChanged<ReadingAnchor> onAnchorChanged;
 
-  /// 点到某一句时回调，阅读页据此从该句开始播放。
+  /// 点到一句带语音的句子时回调；点到无语音的句子或句间空隙不回调。
   final ValueChanged<SentenceRef> onSentenceTap;
 
   @override

@@ -10,14 +10,16 @@ class SidedText {
     required this.sentences,
   });
 
-  /// 纯文字，不含任何 Markdown 标记。标记在导入时就解析掉，
+  /// 最终显示的文字。已支持的 Markdown 语法的标记在导入时就解析掉；
+  /// 不支持的语法与被转义的字面符号原样保留为文字。
   /// 这样句高亮、点句命中、分页都对着同一份文字计算，不必处理「符号占位」。
   final String text;
 
   /// 按起点排序、互不重叠；未覆盖的区间为默认样式。
   final List<InlineStyleSpan> styleSpans;
 
-  /// 按出现顺序排列、互不重叠。空列表表示这一面没有句级数据（即没有语音）。
+  /// 按出现顺序排列、互不重叠；句与句之间允许有不属于任何句子的间隙（如空格）。
+  /// 空列表表示这一面没有句级数据。
   final List<Sentence> sentences;
 
   SidedText copyWith({

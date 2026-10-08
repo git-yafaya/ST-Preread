@@ -4,6 +4,7 @@ import 'nullable_value_getter.dart';
 ///
 /// 用「文件 + 可选区间」表示，同时兼容「一句一个文件」
 /// 和「一段 / 一楼一个文件、按时间线切分」两种导出方式。
+/// [start] / [end] 相对所引用的文件；有值时必须非负且 start < end。
 class AudioClip {
   const AudioClip({
     required this.filePath,

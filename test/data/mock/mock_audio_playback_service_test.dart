@@ -1,355 +1,246 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:st_preread/core/constants/mock_playback_timing.dart';
-import 'package:st_preread/core/errors/domain_exceptions.dart';
 import 'package:st_preread/data/mock/mock_audio_playback_service.dart';
+import 'package:st_preread/data/mock/mock_playback_timing.dart';
 import 'package:st_preread/domain/domain.dart';
 
-import '../../support/chapter_fixtures.dart';
 import '../../support/manual_playback_ticker.dart';
 
 void main() {
   const tickInterval = MockPlaybackTiming.tickInterval;
-  final sentenceDuration =
-      MockPlaybackTiming.durationPerCharacter * fixtureSentenceLength;
-  final ticksPerSentence =
-      (sentenceDuration.inMicroseconds / tickInterval.inMicroseconds).ceil();
-
-  // 译文一面的播放队列依次是下面三句；中间隔着一句无语音的句子、一个插图块和一条分隔线。
-  final chapter = buildChapterFixture([
-    buildParagraphFixture(
-      id: 'first',
-      sourceAudio: [true],
-      translationAudio: [true, false, true],
-    ),
-    const IllustrationBlock(id: 'image', imagePath: 'a.png', caption: null),
-    const DividerBlock(id: 'divider'),
-    buildParagraphFixture(id: 'last', translationAudio: [true]),
-  ]);
   const firstSentence = SentenceRef(
-    blockIndex: 0,
-    side: TextSide.translation,
-    sentenceIndex: 0,
-  );
-  const secondSentence = SentenceRef(
-    blockIndex: 0,
-    side: TextSide.translation,
-    sentenceIndex: 2,
-  );
-  const lastSentence = SentenceRef(
-    blockIndex: 3,
-    side: TextSide.translation,
-    sentenceIndex: 0,
-  );
-  const silentSentence = SentenceRef(
     blockIndex: 0,
     side: TextSide.translation,
     sentenceIndex: 1,
   );
-  const otherSideSentence = SentenceRef(
-    blockIndex: 0,
+  const secondSentence = SentenceRef(
+    blockIndex: 4,
     side: TextSide.source,
     sentenceIndex: 0,
+  );
+  final firstDuration = tickInterval * 5;
+  final secondDuration = tickInterval * 8;
+  // 两种片段形态：一句一个文件（从文件开头播起），以及共用文件里的一段区间。
+  final firstClip = AudioClip(
+    filePath: 'first.mp3',
+    start: null,
+    end: firstDuration,
+  );
+  final secondClip = AudioClip(
+    filePath: 'shared.mp3',
+    start: const Duration(seconds: 2),
+    end: const Duration(seconds: 2) + secondDuration,
   );
 
   late ManualPlaybackTicker ticker;
   late MockAudioPlaybackService service;
+  late List<PlaybackState> emittedStates;
 
-  Future<PlaybackState> currentState() => service.watchState().first;
+  /// 等状态流把已发出的事件送达后，返回最新状态。
+  Future<PlaybackState> currentState() async {
+    await pumpEventQueue();
+    return emittedStates.last;
+  }
 
-  PlaybackState stateAt(
-    SentenceRef sentence, {
+  Future<int> emittedStateCount() async {
+    await pumpEventQueue();
+    return emittedStates.length;
+  }
+
+  PlaybackState stateOfFirst({
     PlaybackStatus status = PlaybackStatus.playing,
     Duration position = Duration.zero,
   }) {
     return PlaybackState(
       status: status,
-      sentence: sentence,
+      sentence: firstSentence,
       position: position,
-      duration: sentenceDuration,
+      duration: firstDuration,
     );
   }
 
-  setUp(() async {
+  PlaybackState playingSecondFromStart() {
+    return PlaybackState(
+      status: PlaybackStatus.playing,
+      sentence: secondSentence,
+      position: Duration.zero,
+      duration: secondDuration,
+    );
+  }
+
+  Future<void> playFirst() {
+    return service.play(sentence: firstSentence, clip: firstClip);
+  }
+
+  Future<void> playSecond() {
+    return service.play(sentence: secondSentence, clip: secondClip);
+  }
+
+  /// 进入「第一句已暂停在两个间隔处」的状态。
+  Future<void> pauseFirstAfterTwoTicks() async {
+    await playFirst();
+    ticker.tick(times: 2);
+    await service.pause();
+  }
+
+  setUp(() {
     ticker = ManualPlaybackTicker();
     service = MockAudioPlaybackService(ticker: ticker);
+    emittedStates = [];
+    final subscription = service.watchState().listen(emittedStates.add);
+    addTearDown(subscription.cancel);
     addTearDown(service.dispose);
-    await service.loadChapter(chapter, TextSide.translation);
   });
 
-  group('初始与起播', () {
-    test('加载章节后处于 idle，时间源未启动', () async {
-      expect(await currentState(), const PlaybackState.idle());
-      expect(ticker.isRunning, isFalse);
-    });
+  test('初始为 idle，时间源未启动', () async {
+    expect(await currentState(), const PlaybackState.idle());
+    expect(ticker.isRunning, isFalse);
+  });
 
-    test('playFrom 从指定句的开头开始播放，时长按句长推算', () async {
-      await service.playFrom(secondSentence);
+  group('play', () {
+    test('idle 时：从这一句的开头开始播放', () async {
+      await playFirst();
 
-      expect(await currentState(), stateAt(secondSentence));
+      expect(await currentState(), stateOfFirst());
       expect(ticker.isRunning, isTrue);
       expect(ticker.lastInterval, tickInterval);
     });
 
-    test('playFrom 传入无语音的句子时抛 SentenceNotPlayableException', () async {
-      await expectLater(
-        service.playFrom(silentSentence),
-        throwsA(
-          isA<SentenceNotPlayableException>().having(
-            (exception) => exception.sentence,
-            'sentence',
-            silentSentence,
-          ),
-        ),
-      );
-      expect(await currentState(), const PlaybackState.idle());
-      expect(ticker.isRunning, isFalse);
-    });
-
-    test('playFrom 传入另一面的句子时抛 SentenceNotPlayableException', () async {
-      await expectLater(
-        service.playFrom(otherSideSentence),
-        throwsA(isA<SentenceNotPlayableException>()),
-      );
-      expect(await currentState(), const PlaybackState.idle());
-    });
-
-    test('尚未加载章节时 playFrom 抛 SentenceNotPlayableException', () async {
-      final emptyService = MockAudioPlaybackService(
-        ticker: ManualPlaybackTicker(),
-      );
-      addTearDown(emptyService.dispose);
-
-      await expectLater(
-        emptyService.playFrom(firstSentence),
-        throwsA(isA<SentenceNotPlayableException>()),
-      );
-    });
-
-    test('playFrom 失败不打断正在进行的播放', () async {
-      await service.playFrom(firstSentence);
-      ticker.tick();
-
-      await expectLater(
-        service.playFrom(silentSentence),
-        throwsA(isA<SentenceNotPlayableException>()),
-      );
-
-      expect(
-        await currentState(),
-        stateAt(firstSentence, position: tickInterval),
-      );
-      expect(ticker.isRunning, isTrue);
-    });
-  });
-
-  group('逐句推进', () {
-    test('每个间隔把句内位置向前推进一格', () async {
-      await service.playFrom(firstSentence);
-
+    test('playing 时：立即停掉当前句，从头改播新的一句', () async {
+      await playFirst();
       ticker.tick(times: 2);
 
-      expect(
-        await currentState(),
-        stateAt(firstSentence, position: tickInterval * 2),
-      );
-    });
+      await playSecond();
 
-    test('一句播完后自动进入队列中的下一句，跳过无语音的句子', () async {
-      await service.playFrom(firstSentence);
-
-      ticker.tick(times: ticksPerSentence - 1);
-      expect((await currentState()).sentence, firstSentence);
-
-      ticker.tick();
-      expect(await currentState(), stateAt(secondSentence));
-    });
-
-    test('推进时跨过插图块与分隔线进入后面的段落', () async {
-      await service.playFrom(secondSentence);
-
-      ticker.tick(times: ticksPerSentence);
-
-      expect(await currentState(), stateAt(lastSentence));
-    });
-
-    test('播完队列最后一句后回到 idle 并停掉时间源', () async {
-      await service.playFrom(lastSentence);
-
-      ticker.tick(times: ticksPerSentence);
-
-      expect(await currentState(), const PlaybackState.idle());
-      expect(ticker.isRunning, isFalse);
-    });
-
-    test('从头播到章末，依次经过队列中的每一句后停止', () async {
-      final playedSentences = <SentenceRef?>[];
-      final subscription = service.watchState().listen((state) {
-        if (playedSentences.isEmpty || playedSentences.last != state.sentence) {
-          playedSentences.add(state.sentence);
-        }
-      });
-      addTearDown(subscription.cancel);
-
-      await service.playFrom(firstSentence);
-      ticker.tick(times: ticksPerSentence * 3);
-      await pumpEventQueue();
-
-      expect(playedSentences, [
-        null,
-        firstSentence,
-        secondSentence,
-        lastSentence,
-        null,
-      ]);
-    });
-  });
-
-  group('暂停与恢复', () {
-    test('暂停后保留句子与位置，时间流逝不再推进', () async {
-      await service.playFrom(firstSentence);
-      ticker.tick(times: 2);
-
-      await service.pause();
-      ticker.tick(times: ticksPerSentence);
-
-      expect(
-        await currentState(),
-        stateAt(
-          firstSentence,
-          status: PlaybackStatus.paused,
-          position: tickInterval * 2,
-        ),
-      );
-      expect(ticker.isRunning, isFalse);
-    });
-
-    test('恢复后从暂停的位置继续推进', () async {
-      await service.playFrom(firstSentence);
-      ticker.tick(times: 2);
-      await service.pause();
-
-      await service.resume();
-      expect(
-        await currentState(),
-        stateAt(firstSentence, position: tickInterval * 2),
-      );
-
-      ticker.tick();
-      expect(
-        await currentState(),
-        stateAt(firstSentence, position: tickInterval * 3),
-      );
-    });
-
-    test('idle 时 resume 不做任何事', () async {
-      await service.resume();
-
-      expect(await currentState(), const PlaybackState.idle());
-      expect(ticker.isRunning, isFalse);
-    });
-
-    test('正在播放时 resume 不改变状态', () async {
-      await service.playFrom(firstSentence);
-      ticker.tick();
-
-      await service.resume();
-
-      expect(
-        await currentState(),
-        stateAt(firstSentence, position: tickInterval),
-      );
-    });
-
-    test('idle 或已暂停时 pause 不改变状态', () async {
-      await service.pause();
-      expect(await currentState(), const PlaybackState.idle());
-
-      await service.playFrom(firstSentence);
-      await service.pause();
-      await service.pause();
-      expect(
-        await currentState(),
-        stateAt(firstSentence, status: PlaybackStatus.paused),
-      );
-    });
-  });
-
-  group('上一句与下一句', () {
-    test('播放中跳到下一句：从该句开头继续播放', () async {
-      await service.playFrom(firstSentence);
-      ticker.tick(times: 2);
-
-      await service.skipToNextSentence();
-
-      expect(await currentState(), stateAt(secondSentence));
+      expect(await currentState(), playingSecondFromStart());
       expect(ticker.isRunning, isTrue);
     });
 
-    test('暂停中跳到下一句：停在该句开头并保持暂停', () async {
-      await service.playFrom(firstSentence);
-      await service.pause();
-
-      await service.skipToNextSentence();
-
-      expect(
-        await currentState(),
-        stateAt(secondSentence, status: PlaybackStatus.paused),
-      );
-      expect(ticker.isRunning, isFalse);
-    });
-
-    test('已是最后一句时跳到下一句：停止并回到 idle', () async {
-      await service.playFrom(lastSentence);
-
-      await service.skipToNextSentence();
-
-      expect(await currentState(), const PlaybackState.idle());
-      expect(ticker.isRunning, isFalse);
-    });
-
-    test('跳到上一句：从上一句的开头播放', () async {
-      await service.playFrom(lastSentence);
+    test('playing 时再播同一句：从这一句的开头重新播放', () async {
+      await playFirst();
       ticker.tick(times: 2);
 
-      await service.skipToPreviousSentence();
+      await playFirst();
 
-      expect(await currentState(), stateAt(secondSentence));
+      expect(await currentState(), stateOfFirst());
     });
 
-    test('已是第一句时跳到上一句：从该句开头重播', () async {
-      await service.playFrom(firstSentence);
-      ticker.tick(times: 2);
+    test('paused 时：丢弃暂停的句子，播放新的一句', () async {
+      await pauseFirstAfterTwoTicks();
 
-      await service.skipToPreviousSentence();
+      await playSecond();
 
-      expect(await currentState(), stateAt(firstSentence));
+      expect(await currentState(), playingSecondFromStart());
       expect(ticker.isRunning, isTrue);
     });
 
-    test('暂停中跳到上一句：保持暂停', () async {
-      await service.playFrom(secondSentence);
+    test('时长取自片段区间；没有结束位置时用兜底时长', () async {
+      const wholeFileClip = AudioClip(
+        filePath: 'whole.mp3',
+        start: null,
+        end: null,
+      );
+
+      await playFirst();
+      expect((await currentState()).duration, firstDuration);
+
+      await playSecond();
+      expect((await currentState()).duration, secondDuration);
+
+      await service.play(sentence: firstSentence, clip: wholeFileClip);
+      expect(
+        (await currentState()).duration,
+        MockPlaybackTiming.fallbackClipDuration,
+      );
+    });
+  });
+
+  group('pause', () {
+    test('idle 时：不做任何事', () async {
+      final countBefore = await emittedStateCount();
+
       await service.pause();
 
-      await service.skipToPreviousSentence();
+      expect(await currentState(), const PlaybackState.idle());
+      expect(await emittedStateCount(), countBefore);
+      expect(ticker.isRunning, isFalse);
+    });
+
+    test('playing 时：进入 paused，保留句子与位置，时间不再推进', () async {
+      await playFirst();
+      ticker.tick(times: 2);
+
+      await service.pause();
+      ticker.tick(times: 10);
 
       expect(
         await currentState(),
-        stateAt(firstSentence, status: PlaybackStatus.paused),
+        stateOfFirst(status: PlaybackStatus.paused, position: tickInterval * 2),
       );
+      expect(ticker.isRunning, isFalse);
     });
 
-    test('idle 时上一句、下一句都不做任何事', () async {
-      await service.skipToNextSentence();
-      await service.skipToPreviousSentence();
+    test('paused 时：不做任何事', () async {
+      await pauseFirstAfterTwoTicks();
+      final stateBefore = await currentState();
+      final countBefore = await emittedStateCount();
 
-      expect(await currentState(), const PlaybackState.idle());
+      await service.pause();
+
+      expect(await currentState(), stateBefore);
+      expect(await emittedStateCount(), countBefore);
       expect(ticker.isRunning, isFalse);
     });
   });
 
-  group('停止与换章', () {
-    test('stop 回到 idle 并停掉时间源', () async {
-      await service.playFrom(firstSentence);
+  group('resume', () {
+    test('idle 时：不做任何事', () async {
+      final countBefore = await emittedStateCount();
+
+      await service.resume();
+
+      expect(await currentState(), const PlaybackState.idle());
+      expect(await emittedStateCount(), countBefore);
+      expect(ticker.isRunning, isFalse);
+    });
+
+    test('playing 时：不做任何事，播放照常推进', () async {
+      await playFirst();
+      ticker.tick();
+      final countBefore = await emittedStateCount();
+
+      await service.resume();
+
+      expect(await currentState(), stateOfFirst(position: tickInterval));
+      expect(await emittedStateCount(), countBefore);
+
+      ticker.tick();
+      expect(await currentState(), stateOfFirst(position: tickInterval * 2));
+    });
+
+    test('paused 时：从暂停位置继续播放', () async {
+      await pauseFirstAfterTwoTicks();
+
+      await service.resume();
+      expect(await currentState(), stateOfFirst(position: tickInterval * 2));
+      expect(ticker.isRunning, isTrue);
+
+      ticker.tick();
+      expect(await currentState(), stateOfFirst(position: tickInterval * 3));
+    });
+  });
+
+  group('stop', () {
+    test('idle 时：不做任何事', () async {
+      final countBefore = await emittedStateCount();
+
+      await service.stop();
+
+      expect(await currentState(), const PlaybackState.idle());
+      expect(await emittedStateCount(), countBefore);
+    });
+
+    test('playing 时：回到 idle 并停掉时间源', () async {
+      await playFirst();
       ticker.tick();
 
       await service.stop();
@@ -358,83 +249,144 @@ void main() {
       expect(ticker.isRunning, isFalse);
     });
 
-    test('暂停中 stop 之后不能再 resume', () async {
-      await service.playFrom(firstSentence);
-      await service.pause();
+    test('paused 时：回到 idle，之后 resume 不再生效', () async {
+      await pauseFirstAfterTwoTicks();
+
       await service.stop();
+      expect(await currentState(), const PlaybackState.idle());
 
       await service.resume();
-
-      expect(await currentState(), const PlaybackState.idle());
-    });
-
-    test('播放中加载新章节会停止播放并换用新的队列', () async {
-      await service.playFrom(firstSentence);
-
-      await service.loadChapter(chapter, TextSide.source);
-
       expect(await currentState(), const PlaybackState.idle());
       expect(ticker.isRunning, isFalse);
-      await expectLater(
-        service.playFrom(firstSentence),
-        throwsA(isA<SentenceNotPlayableException>()),
-      );
-      await service.playFrom(otherSideSentence);
-      expect(await currentState(), stateAt(otherSideSentence));
+    });
+  });
+
+  group('这一句自然播完', () {
+    test('每过一个间隔，句内位置向前推进一格', () async {
+      await playFirst();
+
+      ticker.tick(times: 3);
+
+      expect(await currentState(), stateOfFirst(position: tickInterval * 3));
     });
 
-    test('加载没有任何语音的一面后任何句子都不可播', () async {
-      final unvoicedChapter = buildChapterFixture([
-        buildParagraphFixture(translationAudio: [false, false]),
-      ]);
+    test('playing 时：到时长即回到 idle 并停掉时间源', () async {
+      await playFirst();
 
-      await service.loadChapter(unvoicedChapter, TextSide.translation);
+      ticker.tick(times: 4);
+      expect((await currentState()).status, PlaybackStatus.playing);
 
-      await expectLater(
-        service.playFrom(firstSentence),
-        throwsA(isA<SentenceNotPlayableException>()),
-      );
+      ticker.tick();
+      expect(await currentState(), const PlaybackState.idle());
+      expect(ticker.isRunning, isFalse);
+    });
+
+    test('播完后不会接着播别的句子，再过多久都保持 idle', () async {
+      await playFirst();
+      ticker.tick(times: 5);
+      final countAfterFinish = await emittedStateCount();
+
+      ticker.tick(times: 20);
+
+      expect(await currentState(), const PlaybackState.idle());
+      expect(await emittedStateCount(), countAfterFinish);
+    });
+
+    test('暂停后恢复，播满剩余时长才结束', () async {
+      await pauseFirstAfterTwoTicks();
+      await service.resume();
+
+      ticker.tick(times: 2);
+      expect((await currentState()).status, PlaybackStatus.playing);
+
+      ticker.tick();
+      expect(await currentState(), const PlaybackState.idle());
+    });
+  });
+
+  group('被打断的旧句子不再发出任何状态', () {
+    test('被新的 play 打断后，旧句子迟到的进度不影响新句子', () async {
+      await playFirst();
+      ticker.tick(times: 2);
+      await playSecond();
+      final countBefore = await emittedStateCount();
+
+      ticker.fireStaleCallbacks();
+
+      expect(await currentState(), playingSecondFromStart());
+      expect(await emittedStateCount(), countBefore);
+    });
+
+    test('被新的 play 打断后，旧句子迟到的「播完」不会让新句子停止', () async {
+      await playFirst();
+      ticker.tick(times: 4);
+      await playSecond();
+
+      ticker.fireStaleCallbacks();
+      ticker.fireStaleCallbacks();
+
+      expect(await currentState(), playingSecondFromStart());
+      expect(ticker.isRunning, isTrue);
+    });
+
+    test('被 stop 打断后，迟到的计时不会让状态离开 idle', () async {
+      await playFirst();
+      ticker.tick();
+      await service.stop();
+      final countBefore = await emittedStateCount();
+
+      ticker.fireStaleCallbacks();
+
+      expect(await currentState(), const PlaybackState.idle());
+      expect(await emittedStateCount(), countBefore);
+    });
+
+    test('暂停期间迟到的计时不会推进位置', () async {
+      await pauseFirstAfterTwoTicks();
+      final stateBefore = await currentState();
+
+      ticker.fireStaleCallbacks();
+
+      expect(await currentState(), stateBefore);
+    });
+
+    test('恢复播放后，暂停前那一轮迟到的计时不会让位置多走一格', () async {
+      await pauseFirstAfterTwoTicks();
+      await service.resume();
+
+      ticker.fireStaleCallbacks();
+
+      expect(await currentState(), stateOfFirst(position: tickInterval * 2));
     });
   });
 
   group('状态流', () {
-    test('订阅者先收到当前状态，再依次收到每次变化', () async {
-      await service.playFrom(firstSentence);
-      final received = <PlaybackState>[];
-      final subscription = service.watchState().listen(received.add);
-      addTearDown(subscription.cancel);
-
+    test('后来的订阅者一订阅就收到当前状态', () async {
+      await playFirst();
       ticker.tick();
-      await service.pause();
-      await pumpEventQueue();
-
-      expect(received, [
-        stateAt(firstSentence),
-        stateAt(firstSentence, position: tickInterval),
-        stateAt(
-          firstSentence,
-          status: PlaybackStatus.paused,
-          position: tickInterval,
-        ),
-      ]);
-    });
-
-    test('时长随句子长度变化', () async {
-      const longSentenceLength = fixtureSentenceLength * 3;
-      final longChapter = buildChapterFixture([
-        buildParagraphFixture(
-          translationAudio: [true],
-          sentenceLength: longSentenceLength,
-        ),
-      ]);
-      await service.loadChapter(longChapter, TextSide.translation);
-
-      await service.playFrom(firstSentence);
 
       expect(
-        (await currentState()).duration,
-        MockPlaybackTiming.durationPerCharacter * longSentenceLength,
+        await service.watchState().first,
+        stateOfFirst(position: tickInterval),
       );
+    });
+
+    test('订阅者依次收到每一次状态变化', () async {
+      await playFirst();
+      ticker.tick();
+      await service.pause();
+      await service.resume();
+      await service.stop();
+      await pumpEventQueue();
+
+      expect(emittedStates, [
+        const PlaybackState.idle(),
+        stateOfFirst(),
+        stateOfFirst(position: tickInterval),
+        stateOfFirst(status: PlaybackStatus.paused, position: tickInterval),
+        stateOfFirst(position: tickInterval),
+        const PlaybackState.idle(),
+      ]);
     });
   });
 }

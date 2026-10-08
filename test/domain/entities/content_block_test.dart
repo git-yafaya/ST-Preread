@@ -136,19 +136,5 @@ void main() {
 
       expect(sameIdBlocks.toSet(), hasLength(sameIdBlocks.length));
     });
-
-    test('可以用 switch 穷尽三种块', () {
-      String describe(ContentBlock block) {
-        return switch (block) {
-          ParagraphBlock() => 'paragraph',
-          IllustrationBlock() => 'illustration',
-          DividerBlock() => 'divider',
-        };
-      }
-
-      expect(describe(paragraph), 'paragraph');
-      expect(describe(illustration), 'illustration');
-      expect(describe(divider), 'divider');
-    });
   });
 }

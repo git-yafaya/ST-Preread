@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/misc.dart' show Override;
 
+import '../core/constants/reader_setting_defaults.dart';
 import '../core/providers/providers.dart';
 import '../data/mock/mock_audio_playback_service.dart';
 import '../data/mock/mock_book_repository.dart';
@@ -20,7 +21,9 @@ List<Override> buildMockProviderBindings() {
       (ref) => MockReadingProgressRepository(),
     ),
     readerSettingsRepositoryProvider.overrideWith((ref) {
-      final repository = MockReaderSettingsRepository();
+      final repository = MockReaderSettingsRepository(
+        initialSettings: defaultReaderSettings,
+      );
       ref.onDispose(repository.dispose);
       return repository;
     }),

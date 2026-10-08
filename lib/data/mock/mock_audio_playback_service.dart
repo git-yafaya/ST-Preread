@@ -1,15 +1,9 @@
-import 'dart:math' as math;
-
-import '../../core/constants/mock_playback_timing.dart';
-import '../../core/errors/domain_exceptions.dart';
 import '../../domain/domain.dart';
 import 'latest_value_broadcaster.dart';
+import 'mock_playback_timing.dart';
 import 'playback_ticker.dart';
 
-/// 播放队列中的一项：句子定位与推算出的时长。
-typedef _QueueEntry = ({SentenceRef sentence, Duration duration});
-
-/// 不发声的假播放器：按句子长度推算时长，随时间源逐句推进。
+/// 不发声的假播放器：一次只播一句，按语音片段的时长推进位置，到时长即回到 idle。
 class MockAudioPlaybackService implements AudioPlaybackService {
   MockAudioPlaybackService({PlaybackTicker? ticker})
     : _ticker = ticker ?? TimerPlaybackTicker();
@@ -18,30 +12,28 @@ class MockAudioPlaybackService implements AudioPlaybackService {
   final LatestValueBroadcaster<PlaybackState> _state =
       LatestValueBroadcaster<PlaybackState>(const PlaybackState.idle());
 
-  List<_QueueEntry> _queue = const [];
-
-  /// 当前句在队列中的下标；idle 时为 null。
-  int? _currentQueueIndex;
+  /// 当前这一轮计时的序号，每次开始或停止计时都加一。
+  /// 计时回调带着自己那一轮的序号，对不上就说明它属于已被打断的旧句子，必须丢弃：
+  /// 时间源即使在停掉之后又迟到地回调一次，也不能让旧句子再发出状态。
+  int _tickingRound = 0;
 
   @override
   Stream<PlaybackState> watchState() => _state.watch();
 
   @override
-  Future<void> loadChapter(Chapter chapter, TextSide side) async {
-    _stopPlayback();
-    _queue = [
-      for (final sentence in listPlayableSentences(chapter, side))
-        (sentence: sentence, duration: _estimateDuration(chapter, sentence)),
-    ];
-  }
-
-  @override
-  Future<void> playFrom(SentenceRef sentence) async {
-    final queueIndex = _queue.indexWhere((entry) => entry.sentence == sentence);
-    if (queueIndex < 0) {
-      throw SentenceNotPlayableException(sentence);
-    }
-    _enterSentence(queueIndex, PlaybackStatus.playing);
+  Future<void> play({
+    required SentenceRef sentence,
+    required AudioClip clip,
+  }) async {
+    _state.emit(
+      PlaybackState(
+        status: PlaybackStatus.playing,
+        sentence: sentence,
+        position: Duration.zero,
+        duration: _durationOf(clip),
+      ),
+    );
+    _startTicking();
   }
 
   @override
@@ -49,7 +41,7 @@ class MockAudioPlaybackService implements AudioPlaybackService {
     if (_state.value.status != PlaybackStatus.playing) {
       return;
     }
-    _ticker.stop();
+    _stopTicking();
     _state.emit(_state.value.copyWith(status: PlaybackStatus.paused));
   }
 
@@ -59,94 +51,61 @@ class MockAudioPlaybackService implements AudioPlaybackService {
       return;
     }
     _state.emit(_state.value.copyWith(status: PlaybackStatus.playing));
-    _ticker.start(MockPlaybackTiming.tickInterval, _advancePosition);
+    _startTicking();
   }
 
   @override
-  Future<void> skipToNextSentence() async {
-    final currentQueueIndex = _currentQueueIndex;
-    if (currentQueueIndex == null) {
+  Future<void> stop() async {
+    if (_state.value.status == PlaybackStatus.idle) {
       return;
     }
-    _moveToQueueIndex(currentQueueIndex + 1);
+    _returnToIdle();
   }
-
-  @override
-  Future<void> skipToPreviousSentence() async {
-    final currentQueueIndex = _currentQueueIndex;
-    if (currentQueueIndex == null) {
-      return;
-    }
-    _moveToQueueIndex(math.max(currentQueueIndex - 1, 0));
-  }
-
-  @override
-  Future<void> stop() async => _stopPlayback();
 
   /// 释放时间源与状态流；之后不应再使用本实例。
   Future<void> dispose() {
-    _ticker.stop();
+    _stopTicking();
     return _state.close();
   }
 
-  Duration _estimateDuration(Chapter chapter, SentenceRef sentenceRef) {
-    final paragraph = chapter.blocks[sentenceRef.blockIndex] as ParagraphBlock;
-    final sentences = paragraph.textOf(sentenceRef.side)?.sentences ?? const [];
-    final characterCount = sentences[sentenceRef.sentenceIndex].length;
-    return MockPlaybackTiming.durationPerCharacter * characterCount;
+  /// 假播放器不读文件，时长只能来自片段自带的区间。
+  Duration _durationOf(AudioClip clip) {
+    final end = clip.end;
+    if (end == null) {
+      return MockPlaybackTiming.fallbackClipDuration;
+    }
+    return end - (clip.start ?? Duration.zero);
   }
 
-  void _advancePosition() {
-    final currentQueueIndex = _currentQueueIndex;
-    if (currentQueueIndex == null) {
-      return;
-    }
-    final nextPosition =
-        _state.value.position + MockPlaybackTiming.tickInterval;
-    if (nextPosition < _queue[currentQueueIndex].duration) {
-      _state.emit(_state.value.copyWith(position: nextPosition));
-      return;
-    }
-    _moveToQueueIndex(currentQueueIndex + 1);
-  }
-
-  /// 换到队列中的另一句并保持原有的播放 / 暂停状态；越过队尾则停止。
-  void _moveToQueueIndex(int queueIndex) {
-    if (queueIndex >= _queue.length) {
-      _stopPlayback();
-      return;
-    }
-    _enterSentence(queueIndex, _state.value.status);
-  }
-
-  void _enterSentence(int queueIndex, PlaybackStatus status) {
-    final entry = _queue[queueIndex];
-    _currentQueueIndex = queueIndex;
-    _state.emit(
-      PlaybackState(
-        status: status,
-        sentence: entry.sentence,
-        position: Duration.zero,
-        duration: entry.duration,
-      ),
+  void _startTicking() {
+    final round = ++_tickingRound;
+    _ticker.start(
+      MockPlaybackTiming.tickInterval,
+      () => _advancePosition(round),
     );
-    _synchronizeTicker(status);
   }
 
-  /// 每进入一句都重新起一轮计时，让新句子从完整的一个间隔开始计。
-  void _synchronizeTicker(PlaybackStatus status) {
-    if (status == PlaybackStatus.playing) {
-      _ticker.start(MockPlaybackTiming.tickInterval, _advancePosition);
+  void _stopTicking() {
+    _tickingRound++;
+    _ticker.stop();
+  }
+
+  void _advancePosition(int round) {
+    if (round != _tickingRound) {
       return;
     }
-    _ticker.stop();
+    final current = _state.value;
+    final nextPosition = current.position + MockPlaybackTiming.tickInterval;
+    final duration = current.duration;
+    if (duration != null && nextPosition >= duration) {
+      _returnToIdle();
+      return;
+    }
+    _state.emit(current.copyWith(position: nextPosition));
   }
 
-  void _stopPlayback() {
-    _ticker.stop();
-    _currentQueueIndex = null;
-    if (_state.value != const PlaybackState.idle()) {
-      _state.emit(const PlaybackState.idle());
-    }
+  void _returnToIdle() {
+    _stopTicking();
+    _state.emit(const PlaybackState.idle());
   }
 }

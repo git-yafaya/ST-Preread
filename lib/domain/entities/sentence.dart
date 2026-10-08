@@ -13,13 +13,13 @@ class Sentence {
   }) : assert(startOffset >= 0, 'startOffset 不能为负'),
        assert(endOffset > startOffset, '句子区间不能为空');
 
-  /// 起始字符下标（含）。
+  /// 起始字符下标（含），以 UTF-16 码元为单位。
   final int startOffset;
 
   /// 结束字符下标（不含）。
   final int endOffset;
 
-  /// 为 null 表示这一句没有语音。
+  /// 为 null 表示这一句没有语音（旁白通常没有）。
   final AudioClip? audio;
 
   int get length => endOffset - startOffset;

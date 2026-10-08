@@ -7,6 +7,8 @@ import 'package:st_preread/data/mock/mock_audio_playback_service.dart';
 import 'package:st_preread/data/mock/mock_reader_settings_repository.dart';
 import 'package:st_preread/domain/domain.dart';
 
+import '../../support/manual_playback_ticker.dart';
+
 void main() {
   /// Riverpod 会把 provider 构建时抛出的错误包一层再抛出，这里取出原始错误。
   Object? readFailureOf(
@@ -47,7 +49,9 @@ void main() {
 
   group('共享的派生流', () {
     test('readerSettingsProvider 跟随设置仓库', () async {
-      final repository = MockReaderSettingsRepository();
+      final repository = MockReaderSettingsRepository(
+        initialSettings: defaultReaderSettings,
+      );
       final container = ProviderContainer(
         overrides: [
           readerSettingsRepositoryProvider.overrideWithValue(repository),
@@ -71,8 +75,16 @@ void main() {
       expect(container.read(readerSettingsProvider).value, darkSettings);
     });
 
-    test('playbackStateProvider 跟随播放服务', () async {
-      final service = MockAudioPlaybackService();
+    test('playbackStateProvider 跟随播放服务的每一次状态变化', () async {
+      const sentence = SentenceRef(
+        blockIndex: 1,
+        side: TextSide.translation,
+        sentenceIndex: 0,
+      );
+      const clipDuration = Duration(seconds: 1);
+      const clip = AudioClip(filePath: 'a.mp3', start: null, end: clipDuration);
+      final service = MockAudioPlaybackService(ticker: ManualPlaybackTicker());
+      addTearDown(service.dispose);
       final container = ProviderContainer(
         overrides: [audioPlaybackServiceProvider.overrideWithValue(service)],
       );
@@ -80,10 +92,29 @@ void main() {
       final subscription = container.listen(playbackStateProvider, (_, _) {});
       addTearDown(subscription.close);
 
+      PlaybackState? providedState() {
+        return container.read(playbackStateProvider).value;
+      }
+
       expect(
         await container.read(playbackStateProvider.future),
         const PlaybackState.idle(),
       );
+
+      await service.play(sentence: sentence, clip: clip);
+      await pumpEventQueue();
+      expect(providedState()?.status, PlaybackStatus.playing);
+      expect(providedState()?.sentence, sentence);
+      expect(providedState()?.duration, clipDuration);
+
+      await service.pause();
+      await pumpEventQueue();
+      expect(providedState()?.status, PlaybackStatus.paused);
+      expect(providedState()?.sentence, sentence);
+
+      await service.stop();
+      await pumpEventQueue();
+      expect(providedState(), const PlaybackState.idle());
     });
   });
 }

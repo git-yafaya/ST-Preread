@@ -6,8 +6,10 @@ import 'package:st_preread/domain/domain.dart';
 
 void main() {
   group('MockReaderSettingsRepository', () {
-    test('初始为默认设置', () async {
-      final repository = MockReaderSettingsRepository();
+    test('初始为传入的设置', () async {
+      final repository = MockReaderSettingsRepository(
+        initialSettings: defaultReaderSettings,
+      );
       addTearDown(repository.dispose);
 
       final settings = await repository.watchSettings().first;
@@ -28,7 +30,9 @@ void main() {
     });
 
     test('保存后推送新设置，之后的订阅者也拿到新设置', () async {
-      final repository = MockReaderSettingsRepository();
+      final repository = MockReaderSettingsRepository(
+        initialSettings: defaultReaderSettings,
+      );
       final received = <ReaderSettings>[];
       final subscription = repository.watchSettings().listen(received.add);
       addTearDown(subscription.cancel);

@@ -4,8 +4,8 @@ enum PageTurnMode { scroll, paged }
 /// 阅读主题。
 enum ReaderThemeMode { system, light, dark }
 
-/// 双语显示方式。
-enum BilingualDisplayMode { sourceOnly, translationOnly, both }
+/// 双语显示方式。[both] 为译文为主、原文为辅，是默认方式。
+enum BilingualDisplayMode { both, translationOnly, sourceOnly }
 
 /// 阅读设置。
 class ReaderSettings {

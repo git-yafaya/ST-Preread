@@ -33,6 +33,24 @@ List<_OffsetRange> _styleRangesOf(SidedText sidedText) {
   ];
 }
 
+List<String> _sentenceTextsOf(SidedText sidedText) {
+  return [
+    for (final sentence in sidedText.sentences)
+      sidedText.text.substring(sentence.startOffset, sentence.endOffset),
+  ];
+}
+
+List<String> _styledTextsOf(SidedText sidedText) {
+  return [
+    for (final span in sidedText.styleSpans)
+      sidedText.text.substring(span.startOffset, span.endOffset),
+  ];
+}
+
+bool _hasVoicedSentence(SidedText? sidedText) {
+  return sidedText?.sentences.any((sentence) => sentence.hasAudio) ?? false;
+}
+
 /// 一段样式是否同时盖住了两句话各自的一部分。
 bool _crossesSentenceBoundary(InlineStyleSpan span, SidedText sidedText) {
   final touchedSentences = sidedText.sentences.where(
@@ -42,6 +60,19 @@ bool _crossesSentenceBoundary(InlineStyleSpan span, SidedText sidedText) {
   );
   return touchedSentences.length > 1;
 }
+
+/// 相邻两句之间是否留有不属于任何句子的文字。
+bool _hasGapBetweenSentences(SidedText sidedText) {
+  final sentences = sidedText.sentences;
+  for (var index = 1; index < sentences.length; index++) {
+    if (sentences[index].startOffset > sentences[index - 1].endOffset) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool _containsSurrogatePair(String text) => text.runes.length < text.length;
 
 void main() {
   final importedAt = DateTime.utc(2026, 10, 8);
@@ -61,11 +92,6 @@ void main() {
   final allStyleSpans = [
     for (final sidedText in allSidedTexts) ...sidedText.styleSpans,
   ];
-  final allStyledTexts = {
-    for (final sidedText in allSidedTexts)
-      for (final span in sidedText.styleSpans)
-        sidedText.text.substring(span.startOffset, span.endOffset),
-  };
 
   group('示例书的基本信息', () {
     test('书架条目与章节内容一致', () {
@@ -93,13 +119,13 @@ void main() {
       final blockIds = allBlocks.map((block) => block.id).toList();
       expect(blockIds.toSet(), hasLength(blockIds.length));
     });
-  });
 
-  group('示例书的覆盖面', () {
     test('有多个章节', () {
       expect(sampleBook.chapters.length, greaterThan(1));
     });
+  });
 
+  group('示例书的段落形态', () {
     test('有双语段落，也有只有原文、只有译文的段落', () {
       bool hasOnly(ParagraphBlock paragraph, TextSide side) {
         return TextSide.values.every(
@@ -127,20 +153,17 @@ void main() {
       );
     });
 
-    test('有带语音的句子，也有不带语音的句子', () {
-      expect(allSentences.where((sentence) => sentence.hasAudio), isNotEmpty);
-      expect(allSentences.where((sentence) => !sentence.hasAudio), isNotEmpty);
-    });
+    test('原文是日语、译文是中文', () {
+      final kana = RegExp(r'[぀-ヿ]');
+      final sourceTexts = paragraphs
+          .map((paragraph) => paragraph.source?.text)
+          .nonNulls;
+      final translationTexts = paragraphs
+          .map((paragraph) => paragraph.translation?.text)
+          .nonNulls;
 
-    test('同一面里存在有语音与无语音句子混排的段落', () {
-      bool isMixed(SidedText sidedText) {
-        final audioFlags = sidedText.sentences.map(
-          (sentence) => sentence.hasAudio,
-        );
-        return audioFlags.contains(true) && audioFlags.contains(false);
-      }
-
-      expect(allSidedTexts.where(isMixed), isNotEmpty);
+      expect(sourceTexts.where(kana.hasMatch), isNotEmpty);
+      expect(translationTexts.where(kana.hasMatch), isEmpty);
     });
 
     test('有没有句级数据的一面', () {
@@ -150,17 +173,19 @@ void main() {
       );
     });
 
-    test('语音既有「一句一个文件」也有「一个文件按区间切分」', () {
-      final clips = allSentences.map((sentence) => sentence.audio).nonNulls;
+    test('有句间间隙：相邻两句之间留有不属于任何句子的文字', () {
+      expect(allSidedTexts.where(_hasGapBetweenSentences), isNotEmpty);
+    });
 
-      expect(
-        clips.where((clip) => clip.start == null && clip.end == null),
-        isNotEmpty,
+    test('有两面都长到超过一屏的段落', () {
+      final longParagraphs = paragraphs.where(
+        (paragraph) => TextSide.values.every(
+          (side) =>
+              (paragraph.textOf(side)?.text.length ?? 0) > _charactersPerScreen,
+        ),
       );
-      expect(
-        clips.where((clip) => clip.start != null && clip.end != null),
-        isNotEmpty,
-      );
+
+      expect(longParagraphs, isNotEmpty);
     });
 
     test('有插图块，带说明与不带说明的各至少一个', () {
@@ -179,25 +204,110 @@ void main() {
         isTrue,
       );
     });
+  });
 
-    test('有两面都长到超过一屏的段落', () {
-      final longParagraphs = paragraphs.where(
-        (paragraph) => TextSide.values.every(
-          (side) =>
-              (paragraph.textOf(side)?.text.length ?? 0) > _charactersPerScreen,
-        ),
+  group('示例书的语音分布', () {
+    final bilingualParagraphs = paragraphs
+        .where(
+          (paragraph) =>
+              paragraph.source != null && paragraph.translation != null,
+        )
+        .toList();
+
+    Iterable<ParagraphBlock> paragraphsWhere({
+      required bool sourceVoiced,
+      required bool translationVoiced,
+    }) {
+      return bilingualParagraphs.where(
+        (paragraph) =>
+            _hasVoicedSentence(paragraph.source) == sourceVoiced &&
+            _hasVoicedSentence(paragraph.translation) == translationVoiced,
       );
+    }
 
-      expect(longParagraphs, isNotEmpty);
+    test('有只有译文句带语音的段落', () {
+      expect(
+        paragraphsWhere(sourceVoiced: false, translationVoiced: true),
+        isNotEmpty,
+      );
     });
 
-    test('三章分别对应：朗读译文、回退到原文、不可播放', () {
-      final narrationSides = [
-        for (final chapter in sampleBook.chapters)
-          selectNarrationSide(chapter, BilingualDisplayMode.both),
+    test('有只有原文句带语音的段落', () {
+      expect(
+        paragraphsWhere(sourceVoiced: true, translationVoiced: false),
+        isNotEmpty,
+      );
+    });
+
+    test('有两面都带语音的段落', () {
+      expect(
+        paragraphsWhere(sourceVoiced: true, translationVoiced: true),
+        isNotEmpty,
+      );
+    });
+
+    test('有两面都不带语音的段落', () {
+      expect(
+        paragraphsWhere(sourceVoiced: false, translationVoiced: false),
+        isNotEmpty,
+      );
+    });
+
+    test('同一段的同一面里有语音与无语音的句子混排', () {
+      bool isMixed(SidedText sidedText) {
+        final audioFlags = sidedText.sentences.map(
+          (sentence) => sentence.hasAudio,
+        );
+        return audioFlags.contains(true) && audioFlags.contains(false);
+      }
+
+      expect(allSidedTexts.where(isMixed), isNotEmpty);
+    });
+
+    test('带语音的都是对白，旁白占多数且没有语音', () {
+      // 一句对白可能被切成几句，所以只要求以引号开头或以引号结尾。
+      final dialogueQuote = RegExp(r'^[「“]|[」”]$');
+      final voicedTexts = [
+        for (final sidedText in allSidedTexts)
+          for (final (index, text) in _sentenceTextsOf(sidedText).indexed)
+            if (sidedText.sentences[index].hasAudio) text,
       ];
 
-      expect(narrationSides, [TextSide.translation, TextSide.source, null]);
+      expect(voicedTexts, isNotEmpty);
+      expect(voicedTexts, everyElement(contains(dialogueQuote)));
+      expect(voicedTexts.length, lessThan(allSentences.length / 2));
+    });
+
+    test('长段落里也有可以点播的句子', () {
+      final longSidedTexts = allSidedTexts.where(
+        (sidedText) => sidedText.text.length > _charactersPerScreen,
+      );
+
+      expect(longSidedTexts, isNotEmpty);
+      expect(longSidedTexts.every(_hasVoicedSentence), isTrue);
+    });
+
+    test('语音片段的区间有效，且都能算出时长', () {
+      final clips = allSentences.map((sentence) => sentence.audio).nonNulls;
+
+      for (final clip in clips) {
+        final start = clip.start ?? Duration.zero;
+        expect(start, greaterThanOrEqualTo(Duration.zero));
+        expect(clip.end, isNotNull);
+        expect(clip.end, greaterThan(start));
+      }
+    });
+
+    test('语音既有「一句一个文件」也有「一个文件按区间切分」', () {
+      final clips = allSentences
+          .map((sentence) => sentence.audio)
+          .nonNulls
+          .toList();
+      final filePaths = clips.map((clip) => clip.filePath).toList();
+
+      expect(clips.where((clip) => clip.start == null), isNotEmpty);
+      expect(clips.where((clip) => clip.start != null), isNotEmpty);
+      expect(filePaths.toSet().length, lessThan(filePaths.length));
     });
   });
 
@@ -240,65 +350,29 @@ void main() {
       expect(allBlocks.whereType<DividerBlock>(), isNotEmpty);
     });
 
-    test('各章的 Markdown 形态与约定的分布一致', () {
-      Set<ParagraphStyle> headingAndQuoteStylesOf(Chapter chapter) {
-        return {
-          for (final block in chapter.blocks.whereType<ParagraphBlock>())
-            if (block.style != ParagraphStyle.body) block.style,
-        };
-      }
-
-      Set<InlineStyle> inlineStylesOf(Chapter chapter) {
-        return {
-          for (final block in chapter.blocks.whereType<ParagraphBlock>())
-            for (final side in TextSide.values)
-              for (final span in block.textOf(side)?.styleSpans ?? const [])
-                ...span.styles,
-        };
-      }
-
-      final blockStylesByChapter = [
-        for (final chapter in sampleBook.chapters)
-          headingAndQuoteStylesOf(chapter),
-      ];
-      final inlineStylesByChapter = [
-        for (final chapter in sampleBook.chapters) inlineStylesOf(chapter),
-      ];
-      final dividerCountsByChapter = [
-        for (final chapter in sampleBook.chapters)
-          chapter.blocks.whereType<DividerBlock>().length,
-      ];
-
-      expect(blockStylesByChapter, [
-        {ParagraphStyle.heading1, ParagraphStyle.heading2},
-        {ParagraphStyle.heading3, ParagraphStyle.quote},
-        <ParagraphStyle>{},
-      ]);
-      expect(inlineStylesByChapter, [
-        {InlineStyle.bold, InlineStyle.italic},
-        {InlineStyle.strikethrough},
-        {InlineStyle.code},
-      ]);
-      expect(dividerCountsByChapter, [1, 0, 1]);
-    });
-
     test('样式区间框住的正是预期的那些文字', () {
-      expect(allStyledTexts, {
-        'Nobody',
+      final styledTexts = {
+        for (final sidedText in allSidedTexts) ..._styledTextsOf(sidedText),
+      };
+
+      expect(styledTexts, {
+        '誰もいなかった',
         '没有人',
-        'Come before the autumn tide',
+        '秋の大潮の前に来なさい',
         '赶在秋潮之前来',
-        'a keeper',
+        '灯台守',
         '守灯人',
-        'did not come back. Inside the tower, slowly,',
+        '戻ってはこなかった。塔の中で、誰かがゆっくりと',
         '没有再回来。塔里，有人慢慢地',
-        'the direction of the wind',
+        '風の向き',
         '风的方向',
         '19:06',
+        '今夜から',
+        '今晚起',
       });
     });
 
-    test('正文是纯文字，不含 Markdown 标记', () {
+    test('正文是显示文字，不含 Markdown 标记', () {
       final inlineMarker = RegExp(r'[*_~`]');
       final blockMarker = RegExp(r'^\s*(#{1,6}\s|>\s|-{3,}\s*$)');
 
@@ -328,21 +402,75 @@ void main() {
       }
     });
 
-    test('样式区间首尾不落在空白上', () {
-      for (final styledText in allStyledTexts) {
-        expect(styledText, styledText.trim());
+    test('句子与样式区间的首尾都不落在空白上', () {
+      for (final sidedText in allSidedTexts) {
+        final framedTexts = [
+          ..._sentenceTextsOf(sidedText),
+          ..._styledTextsOf(sidedText),
+        ];
+        for (final framedText in framedTexts) {
+          expect(framedText, framedText.trim());
+        }
       }
     });
+  });
 
-    test('句子首尾不落在空白上', () {
-      for (final sidedText in allSidedTexts) {
-        for (final sentence in sidedText.sentences) {
-          final sentenceText = sidedText.text.substring(
-            sentence.startOffset,
-            sentence.endOffset,
-          );
-          expect(sentenceText, sentenceText.trim());
-        }
+  group('含 emoji 的文字按 UTF-16 码元计算偏移', () {
+    final emojiSidedTexts = allSidedTexts
+        .where((sidedText) => _containsSurrogatePair(sidedText.text))
+        .toList();
+
+    test('两面各有一处含 emoji 的文字', () {
+      expect(emojiSidedTexts, hasLength(TextSide.values.length));
+    });
+
+    test('emoji 之后的样式区间没有错位', () {
+      final styledTextsAfterEmoji = [
+        for (final sidedText in emojiSidedTexts)
+          for (final span in sidedText.styleSpans)
+            if (_containsSurrogatePair(
+              sidedText.text.substring(0, span.startOffset),
+            ))
+              sidedText.text.substring(span.startOffset, span.endOffset),
+      ];
+
+      expect(styledTextsAfterEmoji, unorderedEquals(['今夜から', '今晚起']));
+    });
+
+    test('emoji 之后的句子区间没有错位', () {
+      final sentenceTextsAfterEmoji = [
+        for (final sidedText in emojiSidedTexts)
+          for (final sentence in sidedText.sentences)
+            if (_containsSurrogatePair(
+              sidedText.text.substring(0, sentence.startOffset),
+            ))
+              sidedText.text.substring(
+                sentence.startOffset,
+                sentence.endOffset,
+              ),
+      ];
+
+      expect(
+        sentenceTextsAfterEmoji,
+        unorderedEquals(['返事はすぐに来た。', '「風邪をひかないようにね」', '回信很快就来了。', '“别着凉。”']),
+      );
+    });
+
+    test('区间没有把 emoji 的代理对从中间切开', () {
+      bool startsWithLowSurrogate(String text) {
+        const lowSurrogateStart = 0xDC00;
+        const lowSurrogateEnd = 0xDFFF;
+        final firstCodeUnit = text.codeUnitAt(0);
+        return firstCodeUnit >= lowSurrogateStart &&
+            firstCodeUnit <= lowSurrogateEnd;
+      }
+
+      for (final sidedText in emojiSidedTexts) {
+        final framedTexts = [
+          ..._sentenceTextsOf(sidedText),
+          ..._styledTextsOf(sidedText),
+        ];
+        expect(framedTexts.where(startsWithLowSurrogate), isEmpty);
       }
     });
   });

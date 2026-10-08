@@ -50,10 +50,3 @@ ParagraphBlock buildParagraphFixture({
           ),
   );
 }
-
-Chapter buildChapterFixture(List<ContentBlock> blocks) {
-  return Chapter(
-    summary: const ChapterSummary(bookId: 'book', index: 0, title: '测试章'),
-    blocks: blocks,
-  );
-}

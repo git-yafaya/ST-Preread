@@ -18,7 +18,11 @@ void main() {
       const position = ReadingPosition(
         bookId: 'book-1',
         chapterIndex: 1,
-        blockIndex: 4,
+        anchor: ReadingAnchor(
+          blockIndex: 4,
+          side: TextSide.translation,
+          textOffset: 40,
+        ),
       );
 
       await repository.savePosition(position);
@@ -30,9 +34,16 @@ void main() {
       const earlier = ReadingPosition(
         bookId: 'book-1',
         chapterIndex: 0,
-        blockIndex: 2,
+        anchor: ReadingAnchor(
+          blockIndex: 2,
+          side: TextSide.translation,
+          textOffset: 20,
+        ),
       );
-      final later = earlier.copyWith(chapterIndex: 2, blockIndex: 0);
+      final later = earlier.copyWith(
+        chapterIndex: 2,
+        anchor: const ReadingAnchor(blockIndex: 0, side: null, textOffset: 0),
+      );
 
       await repository.savePosition(earlier);
       await repository.savePosition(later);
@@ -44,12 +55,20 @@ void main() {
       const firstBookPosition = ReadingPosition(
         bookId: 'book-1',
         chapterIndex: 1,
-        blockIndex: 1,
+        anchor: ReadingAnchor(
+          blockIndex: 1,
+          side: TextSide.translation,
+          textOffset: 10,
+        ),
       );
       const secondBookPosition = ReadingPosition(
         bookId: 'book-2',
         chapterIndex: 2,
-        blockIndex: 2,
+        anchor: ReadingAnchor(
+          blockIndex: 2,
+          side: TextSide.translation,
+          textOffset: 20,
+        ),
       );
 
       await repository.savePosition(firstBookPosition);

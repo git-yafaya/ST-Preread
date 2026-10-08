@@ -1,8 +1,9 @@
-import '../../domain/entities/sentence_ref.dart';
+import '../entities/audio_clip.dart';
 
 /// 领域异常的共同父类型。
 ///
 /// UI 层据此区分「可以转成用户提示的业务错误」与程序缺陷。
+/// 定义在领域层，这样数据层抛出、界面层捕获都只需依赖领域层。
 sealed class DomainException implements Exception {
   const DomainException();
 }
@@ -32,12 +33,16 @@ final class ChapterNotFoundException extends DomainException {
       'ChapterNotFoundException(bookId: $bookId, chapterIndex: $chapterIndex)';
 }
 
-/// 要求播放的句子不在当前播放队列里（不属于已加载的那一面，或没有语音）。
-final class SentenceNotPlayableException extends DomainException {
-  const SentenceNotPlayableException(this.sentence);
+/// 语音无法读取或解码，播放没有开始。
+final class AudioPlaybackFailedException extends DomainException {
+  const AudioPlaybackFailedException({required this.clip, this.cause});
 
-  final SentenceRef sentence;
+  final AudioClip clip;
+
+  /// 底层播放器报告的原始错误，仅用于排查，不直接展示给用户。
+  final Object? cause;
 
   @override
-  String toString() => 'SentenceNotPlayableException(sentence: $sentence)';
+  String toString() =>
+      'AudioPlaybackFailedException(clip: $clip, cause: $cause)';
 }

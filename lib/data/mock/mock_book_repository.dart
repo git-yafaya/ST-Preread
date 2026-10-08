@@ -1,4 +1,3 @@
-import '../../core/errors/domain_exceptions.dart';
 import '../../domain/domain.dart';
 import 'latest_value_broadcaster.dart';
 import 'sample/sample_book_factory.dart';
@@ -35,7 +34,9 @@ class MockBookRepository implements BookRepository {
   @override
   Future<List<ChapterSummary>> listChapters(String bookId) async {
     final sampleBook = _requireSampleBook(bookId);
-    return [for (final chapter in sampleBook.chapters) chapter.summary];
+    return List<ChapterSummary>.unmodifiable(
+      sampleBook.chapters.map((chapter) => chapter.summary),
+    );
   }
 
   @override

@@ -1,4 +1,4 @@
-/// 示例书的「内容描述」：只写纯文字、哪些短语带样式、哪些句子带语音，
+/// 示例书的「内容描述」：只写显示文字、哪些短语带样式、哪些句子带语音，
 /// 字符区间、块 id、语音路径都由构建器推算，避免手写下标出错。
 library;
 
@@ -6,10 +6,20 @@ import '../../../domain/domain.dart';
 
 /// 一句示例文字。
 class SampleSentence {
-  const SampleSentence(this.text, {this.hasAudio = true});
+  const SampleSentence(this.text, {this.hasAudio = false, this.gapAfter = ''});
+
+  /// 带语音的一句（通常是对白）。
+  const SampleSentence.voiced(this.text, {this.gapAfter = ''})
+    : hasAudio = true;
 
   final String text;
+
+  /// 默认不带语音：真实数据里旁白大多没有语音，只有对白才有。
   final bool hasAudio;
+
+  /// 这一句之后、下一句之前的间隙文字（如问号后的全角空格）。
+  /// 它出现在正文里，但不属于任何句子。
+  final String gapAfter;
 }
 
 /// 一处行内样式：用「被加样式的那段文字」来指明位置。
@@ -31,17 +41,8 @@ class SampleSideSpec {
     this.styledPhrases = const [],
   });
 
-  /// 这一面有句级切分，但没有任何语音。
-  SampleSideSpec.withoutAudio(
-    List<String> sentenceTexts, {
-    List<SampleStyledPhrase> styledPhrases = const [],
-  }) : this([
-         for (final text in sentenceTexts)
-           SampleSentence(text, hasAudio: false),
-       ], styledPhrases: styledPhrases);
-
-  /// 这一面每一句都有语音。
-  SampleSideSpec.withAudio(
+  /// 全是旁白：有句级切分，但每一句都没有语音。
+  SampleSideSpec.narration(
     List<String> sentenceTexts, {
     List<SampleStyledPhrase> styledPhrases = const [],
   }) : this([

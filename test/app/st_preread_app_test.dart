@@ -120,7 +120,9 @@ void main() {
     });
 
     testWidgets('运行中修改设置后主题随之切换', (tester) async {
-      final settingsRepository = MockReaderSettingsRepository();
+      final settingsRepository = MockReaderSettingsRepository(
+        initialSettings: defaultReaderSettings,
+      );
       addTearDown(settingsRepository.dispose);
       await pumpApp(tester, settingsRepository: settingsRepository);
 

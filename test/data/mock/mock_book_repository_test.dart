@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:st_preread/core/errors/domain_exceptions.dart';
 import 'package:st_preread/data/mock/mock_book_repository.dart';
 import 'package:st_preread/domain/domain.dart';
 
@@ -93,6 +92,100 @@ void main() {
           ),
         ),
       );
+    });
+  });
+
+  group('MockBookRepository 交出的章节不可被改动', () {
+    /// 取第一章里一个两面都有样式、译文有句级数据的段落。
+    Future<ParagraphBlock> loadStyledParagraph(
+      MockBookRepository repository,
+      String bookId,
+    ) async {
+      final chapter = await repository.loadChapter(bookId, 0);
+      return chapter.blocks.whereType<ParagraphBlock>().firstWhere(
+        (paragraph) =>
+            (paragraph.translation?.styleSpans.isNotEmpty ?? false) &&
+            (paragraph.translation?.sentences.isNotEmpty ?? false),
+      );
+    }
+
+    test('块、句子、样式区间与样式集合都拒绝修改', () async {
+      final repository = buildRepository();
+      final book = (await currentBooks(repository)).single;
+      final chapter = await repository.loadChapter(book.id, 0);
+      final translation = (await loadStyledParagraph(
+        repository,
+        book.id,
+      )).translation!;
+
+      expect(chapter.blocks.clear, throwsUnsupportedError);
+      expect(translation.sentences.clear, throwsUnsupportedError);
+      expect(translation.styleSpans.clear, throwsUnsupportedError);
+      expect(translation.styleSpans.first.styles.clear, throwsUnsupportedError);
+      expect(
+        () => translation.styleSpans.first.styles.add(InlineStyle.code),
+        throwsUnsupportedError,
+      );
+    });
+
+    test('整本书所有段落的集合都不可修改', () async {
+      final repository = buildRepository();
+      final book = (await currentBooks(repository)).single;
+
+      for (final summary in await repository.listChapters(book.id)) {
+        final chapter = await repository.loadChapter(book.id, summary.index);
+        final sidedTexts = [
+          for (final paragraph in chapter.blocks.whereType<ParagraphBlock>())
+            for (final side in TextSide.values) ?paragraph.textOf(side),
+        ];
+
+        expect(chapter.blocks.clear, throwsUnsupportedError);
+        for (final sidedText in sidedTexts) {
+          expect(sidedText.sentences.clear, throwsUnsupportedError);
+          expect(sidedText.styleSpans.clear, throwsUnsupportedError);
+        }
+      }
+    });
+
+    test('尝试修改之后重新加载，内容与之前完全一致', () async {
+      final repository = buildRepository();
+      final book = (await currentBooks(repository)).single;
+      final translationBefore = (await loadStyledParagraph(
+        repository,
+        book.id,
+      )).translation!;
+      final sentencesBefore = List.of(translationBefore.sentences);
+      final styleSpansBefore = List.of(translationBefore.styleSpans);
+
+      expect(translationBefore.sentences.clear, throwsUnsupportedError);
+      expect(translationBefore.styleSpans.clear, throwsUnsupportedError);
+      final translationAfter = (await loadStyledParagraph(
+        repository,
+        book.id,
+      )).translation!;
+
+      expect(translationAfter.sentences, sentencesBefore);
+      expect(translationAfter.styleSpans, styleSpansBefore);
+      expect(sentencesBefore, isNotEmpty);
+      expect(styleSpansBefore, isNotEmpty);
+    });
+
+    test('目录列表拒绝修改', () async {
+      final repository = buildRepository();
+      final book = (await currentBooks(repository)).single;
+      final summaries = await repository.listChapters(book.id);
+
+      expect(summaries.clear, throwsUnsupportedError);
+      expect(
+        await repository.listChapters(book.id),
+        hasLength(book.chapterCount),
+      );
+    });
+
+    test('书架列表拒绝修改', () async {
+      final books = await currentBooks(buildRepository());
+
+      expect(books.clear, throwsUnsupportedError);
     });
   });
 
