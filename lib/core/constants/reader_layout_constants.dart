@@ -6,6 +6,11 @@ abstract final class ReaderLayoutConstants {
   /// 相邻两个块之间的间距。
   static const double blockSpacing = 18;
 
+  /// 滚动模式定位到块的开头时，在块的上方留出的空白。
+  /// 必须小于 [blockSpacing]：留白只能落在块间距里，
+  /// 否则上一个块的末尾会露出来，回报的锚点就成了上一个块。
+  static const double blockStartLeadingMargin = 16;
+
   /// 对照显示时主文与辅文之间的间距：比块间距小，让同一段的两面看起来是一组。
   static const double secondaryTextSpacing = 6;
 
