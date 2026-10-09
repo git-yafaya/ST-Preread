@@ -12,6 +12,8 @@ class PagedChapterView extends StatelessWidget {
     required this.activeSentence,
     required this.onAnchorChanged,
     required this.onSentenceTap,
+    required this.onPreviousChapterRequested,
+    required this.onNextChapterRequested,
     super.key,
   });
 
@@ -29,6 +31,12 @@ class PagedChapterView extends StatelessWidget {
 
   /// 点到一句带语音的句子时回调；点到无语音的句子或句间空隙不回调。
   final ValueChanged<SentenceRef> onSentenceTap;
+
+  /// 用户在第一页继续向前翻时回调；为 null 表示没有上一章。
+  final VoidCallback? onPreviousChapterRequested;
+
+  /// 用户在最后一页继续向后翻时回调；为 null 表示没有下一章。
+  final VoidCallback? onNextChapterRequested;
 
   @override
   Widget build(BuildContext context) {
