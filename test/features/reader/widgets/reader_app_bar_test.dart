@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:st_preread/core/constants/app_routes.dart';
+import 'package:st_preread/core/constants/reader_setting_defaults.dart';
 import 'package:st_preread/core/constants/reader_strings.dart';
+import 'package:st_preread/core/providers/providers.dart';
+import 'package:st_preread/data/mock/mock_reader_settings_repository.dart';
 import 'package:st_preread/features/reader/widgets/reader_app_bar.dart';
 import 'package:st_preread/features/settings/reader_settings_sheet.dart';
 
@@ -18,6 +22,25 @@ void main() {
         isContentsAvailable: isContentsAvailable,
       ),
       drawer: const Drawer(key: drawerKey),
+    );
+  }
+
+  /// 设置面板要读取阅读设置，顶栏弹出它时外层必须有绑定了设置仓库的 ProviderScope，
+  /// 与应用根部的搭建保持一致。
+  Future<void> pumpWithSettingsRepository(WidgetTester tester) async {
+    final settingsRepository = MockReaderSettingsRepository(
+      initialSettings: defaultReaderSettings,
+    );
+    addTearDown(settingsRepository.dispose);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          readerSettingsRepositoryProvider.overrideWithValue(
+            settingsRepository,
+          ),
+        ],
+        child: MaterialApp(home: buildReaderScaffold()),
+      ),
     );
   }
 
@@ -75,7 +98,7 @@ void main() {
     });
 
     testWidgets('设置入口以底部面板弹出阅读设置', (tester) async {
-      await tester.pumpWidget(MaterialApp(home: buildReaderScaffold()));
+      await pumpWithSettingsRepository(tester);
 
       await tester.tap(find.byTooltip(ReaderStrings.settingsTooltip));
       await tester.pumpAndSettle();
