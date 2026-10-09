@@ -21,6 +21,9 @@ abstract final class ReaderLayoutConstants {
 
   static const double dividerVerticalPadding = 8;
 
+  /// 分隔线自身占的高度，不含上下留白。
+  static const double dividerHeight = 1;
+
   /// 换章入口上下的留白：与正文拉开距离，避免滚动阅读时误触。
   static const double chapterBoundaryEntryVerticalPadding = 24;
 

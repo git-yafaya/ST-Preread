@@ -12,7 +12,7 @@ class DividerBlockView extends StatelessWidget {
       padding: EdgeInsets.symmetric(
         vertical: ReaderLayoutConstants.dividerVerticalPadding,
       ),
-      child: Divider(height: 1),
+      child: Divider(height: ReaderLayoutConstants.dividerHeight),
     );
   }
 }

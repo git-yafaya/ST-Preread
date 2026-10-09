@@ -6,6 +6,9 @@ import '../../../core/constants/reader_layout_constants.dart';
 import '../../../domain/domain.dart';
 import '../content/content.dart';
 
+/// getOffsetToReveal 的对齐参数：0 表示把目标的顶边对到视口的顶边。
+const double _viewportTopAlignment = 0;
+
 /// 在已排版的章节内容上，把阅读锚点与滚动距离互相换算。
 ///
 /// 滚动距离会随字号、显示方式、屏幕宽度变化，锚点不会；
@@ -120,6 +123,8 @@ class ScrollAnchorLocator {
 
   /// [box] 顶边对到视口顶部时的滚动距离，与当前滚到哪里无关。
   double _scrollOffsetOfTop(RenderBox box) {
-    return RenderAbstractViewport.of(box).getOffsetToReveal(box, 0).offset;
+    return RenderAbstractViewport.of(box)
+        .getOffsetToReveal(box, _viewportTopAlignment)
+        .offset;
   }
 }

@@ -19,6 +19,8 @@ abstract final class ReaderTextStyleConstants {
   /// 「这一句带语音」的下划线取主题主色的不透明度：
   /// 要淡到不干扰阅读，又要和文字本身颜色的删除线分得开。
   static const double playableUnderlineOpacity = 0.55;
+
+  /// 下划线的粗细，是相对字体默认线宽的倍数。
   static const double playableUnderlineThickness = 1;
 
   /// 被播句子的高亮取主题主色的不透明度。
